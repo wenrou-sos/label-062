@@ -56,7 +56,7 @@
               @change="loadAvailableSlots"
             />
           </div>
-          <div class="time-slots" v-if="timeSlots.length > 0">
+          <div class="time-slots" v-if="!slotsLoading && availableSlots.length > 0">
             <h3>可预约时段</h3>
             <div class="slot-grid">
               <div 
@@ -78,9 +78,24 @@
               </div>
             </div>
           </div>
-          <div v-else class="loading">
+          <div v-else-if="slotsLoading" class="loading">
             <el-skeleton :rows="3" animated />
           </div>
+          <el-empty 
+            v-else-if="!selectedDate" 
+            description="请先选择日期" 
+            :image-size="80"
+          />
+          <el-empty 
+            v-else-if="!selectedHall" 
+            description="请先选择告别厅" 
+            :image-size="80"
+          />
+          <el-empty 
+            v-else 
+            description="暂无可用时段数据" 
+            :image-size="80"
+          />
         </div>
 
         <div v-if="step === 3" class="step-3">
@@ -235,7 +250,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { 
@@ -255,6 +270,7 @@ const step = ref(1)
 const halls = ref([])
 const timeSlots = ref([])
 const availableSlots = ref([])
+const slotsLoading = ref(false)
 const hosts = ref([])
 const makeupArtists = ref([])
 const hostPackages = ref([])
@@ -311,8 +327,9 @@ const formatTime = (time) => {
 }
 
 onMounted(async () => {
-  const [hallsRes, hostPkgRes, makeupPkgRes, hostsRes, makeupRes] = await Promise.all([
+  const [hallsRes, timeSlotsRes, hostPkgRes, makeupPkgRes, hostsRes, makeupRes] = await Promise.all([
     getHalls(),
+    getTimeSlots(),
     getPackages('host'),
     getPackages('makeup'),
     getStaff('host'),
@@ -320,6 +337,7 @@ onMounted(async () => {
   ])
   
   if (hallsRes.success) halls.value = hallsRes.data
+  if (timeSlotsRes.success) timeSlots.value = timeSlotsRes.data
   if (hostPkgRes.success) hostPackages.value = hostPkgRes.data
   if (makeupPkgRes.success) makeupPackages.value = makeupPkgRes.data
   if (hostsRes.success) hosts.value = hostsRes.data
@@ -331,17 +349,37 @@ onMounted(async () => {
   }
 })
 
+watch(step, (newStep) => {
+  if (newStep === 2 && selectedHall.value && selectedDate.value) {
+    loadAvailableSlots()
+  }
+})
+
+watch(selectedHall, (newHall) => {
+  if (step.value === 2 && newHall && selectedDate.value) {
+    loadAvailableSlots()
+  }
+})
+
 const selectHall = (hall) => {
   selectedHall.value = hall
 }
 
 const loadAvailableSlots = async () => {
   selectedSlot.value = null
-  if (!selectedHall.value || !selectedDate.value) return
+  if (!selectedHall.value || !selectedDate.value) {
+    availableSlots.value = []
+    return
+  }
   
-  const res = await checkAvailability(selectedHall.value.id, selectedDate.value)
-  if (res.success) {
-    availableSlots.value = res.data
+  slotsLoading.value = true
+  try {
+    const res = await checkAvailability(selectedHall.value.id, selectedDate.value)
+    if (res.success) {
+      availableSlots.value = res.data
+    }
+  } finally {
+    slotsLoading.value = false
   }
 }
 
